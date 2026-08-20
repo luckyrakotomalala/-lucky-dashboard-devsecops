@@ -1,0 +1,27 @@
+# ClusterIssuer auto-signé — adapté à un cluster de test (kind/minikube) sans domaine public.
+# Pour un vrai domaine en production, remplacer par un ClusterIssuer Let's Encrypt
+# (voir la variante letsencrypt en commentaire plus bas).
+apiVersion: cert-manager.io/v1
+kind: ClusterIssuer
+metadata:
+  name: selfsigned-issuer
+spec:
+  selfSigned: {}
+
+---
+# Variante production avec un vrai domaine (à activer à la place du bloc ci-dessus) :
+#
+# apiVersion: cert-manager.io/v1
+# kind: ClusterIssuer
+# metadata:
+#   name: letsencrypt-prod
+# spec:
+#   acme:
+#     server: https://acme-v02.api.letsencrypt.org/directory
+#     email: votre-email@example.com
+#     privateKeySecretRef:
+#       name: letsencrypt-prod-key
+#     solvers:
+#       - http01:
+#           ingress:
+#             class: nginx
