@@ -1,3 +1,8 @@
-FROM nginx:1.27-alpine
-COPY html/ /usr/share/nginx/html/
+FROM python:3.12-alpine
+WORKDIR /app
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
+COPY app.py .
+COPY html/ ./static/
 EXPOSE 80
+CMD ["python", "app.py"]

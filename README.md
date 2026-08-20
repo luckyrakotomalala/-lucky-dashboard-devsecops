@@ -1,81 +1,69 @@
-# Projet DevSecOps — Dashboard nginx sécurisé sur Kubernetes (GitOps / ArgoCD)
+# Projet DevSecOps — Dashboard nginx sécurisé, connecté en direct au cluster (v2)
 
-## Architecture
+## Ce qui change par rapport à la v1
 
-```
-GitHub (manifests/*.yaml)  --->  ArgoCD  --->  Kubernetes
-```
+La v1 servait une page HTML statique (contenu décoratif, pas connecté au cluster).
+Cette v2 remplace nginx par un petit backend **Python/Flask** qui :
 
-1. Le code du site (`html/`) est packagé dans une image Docker nginx (`Dockerfile`).
-2. Les manifests Kubernetes sont versionnés dans ce dépôt GitHub (dossier `manifests/`).
-3. ArgoCD surveille ce dépôt (`Application` ArgoCD, cf. `05-argocd-application.yaml`)
-   et synchronise automatiquement le cluster avec l'état déclaré dans Git.
-4. Le Deployment tourne avec **4 pods (replicas)**, avec probes et limites de ressources.
-5. Le Service expose les pods en interne (ClusterIP).
-6. L'Ingress Controller (nginx-ingress) expose le Service vers l'extérieur et termine le TLS
-   avec un certificat généré par **cert-manager** (auto-signé par défaut, adaptable en
-   Let's Encrypt pour un vrai domaine).
+1. Sert la même page (dossier `html/`)
+2. Expose une API `/api/status` qui interroge en direct l'API Kubernetes pour lire :
+   - le nombre de replicas prêts / désirés (Deployment)
+   - la présence de l'Ingress
+   - l'état du certificat SSL (cert-manager)
+   - le statut de sync ArgoCD (Application)
+3. La page rafraîchit ces données toutes les 5 secondes via JavaScript (`fetch`)
+
+Pour que ça fonctionne, le pod a besoin de la permission de lire ces ressources : c'est
+le rôle de `manifests/01-rbac.yaml` (ServiceAccount + Role + RoleBinding, en lecture seule).
 
 ## Fichiers
 
 | Fichier | Rôle |
 |---|---|
-| `Dockerfile` | Image nginx qui sert le dashboard (`html/index.html`) |
-| `html/index.html` | Le dashboard servi par nginx |
+| `app.py` | Backend Flask : sert la page + l'API `/api/status` |
+| `requirements.txt` | Dépendances Python (flask, requests) |
+| `Dockerfile` | Image basée sur `python:3.12-alpine` |
+| `html/index.html` | Dashboard avec JavaScript qui appelle `/api/status` |
 | `manifests/00-namespace.yaml` | Namespace `web` |
-| `manifests/01-deployment.yaml` | Deployment nginx, 4 replicas, probes, resources |
-| `manifests/02-service.yaml` | Service ClusterIP |
-| `manifests/03-clusterissuer.yaml` | ClusterIssuer cert-manager (self-signed par défaut) |
+| `manifests/01-rbac.yaml` | ServiceAccount + permissions lecture seule (namespace `web` ET `argocd`) |
+| `manifests/02-deployment.yaml` | Deployment, 4 replicas, utilise le ServiceAccount |
+| `manifests/03-clusterissuer.yaml` | ClusterIssuer cert-manager |
 | `manifests/04-ingress.yaml` | Ingress HTTPS |
-| `manifests/05-argocd-application.yaml` | Application ArgoCD |
+| `manifests/05-service.yaml` | Service ClusterIP |
+| `manifests/06-argocd-application.yaml` | Application ArgoCD |
 
-## Étapes
-
-### 1. Builder et pousser l'image
-
-```bash
-docker build -t <votre-dockerhub-user>/lucky-dashboard:v1 .
-docker push <votre-dockerhub-user>/lucky-dashboard:v1
-```
-
-Puis mettre à jour l'image dans `manifests/01-deployment.yaml` avec votre vrai identifiant.
-
-### 2. Prérequis sur le cluster (une seule fois)
+## Étapes (test local avec minikube, comme pour la v1)
 
 ```bash
-# Ingress Controller nginx
-helm repo add ingress-nginx https://kubernetes.github.io/ingress-nginx
-helm install ingress-nginx ingress-nginx/ingress-nginx -n ingress-nginx --create-namespace
+# 1. Builder la nouvelle image (tag v2, différent de la v1)
+docker build -t lucky-dashboard:v2 .
 
-# cert-manager
-kubectl apply -f https://github.com/cert-manager/cert-manager/releases/latest/download/cert-manager.yaml
+# 2. La charger dans minikube
+minikube image load lucky-dashboard:v2
 
-# ArgoCD
-kubectl create namespace argocd
-kubectl apply -n argocd -f https://raw.githubusercontent.com/argoproj/argo-cd/stable/manifests/install.yaml
+# 3. Appliquer les manifests (dans l'ordre, ou tout le dossier d'un coup)
+kubectl apply -f manifests/00-namespace.yaml
+kubectl apply -f manifests/01-rbac.yaml
+kubectl apply -f manifests/02-deployment.yaml
+kubectl apply -f manifests/03-clusterissuer.yaml
+kubectl apply -f manifests/04-ingress.yaml
+kubectl apply -f manifests/05-service.yaml
 ```
 
-### 3. Déployer via GitOps
+Puis rouvre `https://lucky-dashboard.local` : cette fois, le "X / Y Running" et les
+statuts Ingress / Certificat / ArgoCD reflètent l'état réel du cluster.
 
-1. Poussez ce projet dans votre dépôt GitHub.
-2. Dans `manifests/05-argocd-application.yaml`, remplacez `repoURL` par l'URL de votre dépôt.
-3. Créez l'Application ArgoCD :
-   ```bash
-   kubectl apply -f manifests/05-argocd-application.yaml
-   ```
-4. ArgoCD déploie et maintient ensuite automatiquement tous les autres manifests.
+## Le vérifier
 
-### 4. Vérification
+Change le nombre de replicas et regarde le dashboard se mettre à jour tout seul en
+quelques secondes, sans recharger la page :
 
 ```bash
-kubectl get pods -n web              # 4 pods Running
-kubectl get svc -n web
-kubectl get ingress -n web
-kubectl get certificate -n web       # READY=True
-kubectl get application -n argocd    # Synced / Healthy
+kubectl scale deployment lucky-dashboard -n web --replicas=6
 ```
 
-Pour tester en local sans domaine public, ajoutez à `/etc/hosts` :
-```
-127.0.0.1 lucky-dashboard.local
-```
+## Pour la suite en GitOps (comme la v1)
+
+Une fois que ça fonctionne en local, pousse ce dossier sur ton dépôt GitHub (à la
+place du contenu de la v1), et applique `manifests/06-argocd-application.yaml` avec
+la bonne URL de dépôt — ArgoCD prendra le relais comme avant.

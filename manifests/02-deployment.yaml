@@ -15,9 +15,10 @@ spec:
       labels:
         app: lucky-dashboard
     spec:
+      serviceAccountName: lucky-dashboard-sa
       containers:
         - name: site
-          image: lucky-dashboard:v1
+          image: lucky-dashboard:v2
           imagePullPolicy: Never
           ports:
             - containerPort: 80

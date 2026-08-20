@@ -1,0 +1,66 @@
+# Identité du pod dashboard, utilisée pour s'authentifier auprès de l'API Kubernetes
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: lucky-dashboard-sa
+  namespace: web
+
+---
+# Droits en LECTURE SEULE sur les ressources du namespace "web"
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: lucky-dashboard-role
+  namespace: web
+rules:
+  - apiGroups: ["apps"]
+    resources: ["deployments"]
+    verbs: ["get", "list"]
+  - apiGroups: ["networking.k8s.io"]
+    resources: ["ingresses"]
+    verbs: ["get", "list"]
+  - apiGroups: ["cert-manager.io"]
+    resources: ["certificates"]
+    verbs: ["get", "list"]
+
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: lucky-dashboard-rolebinding
+  namespace: web
+subjects:
+  - kind: ServiceAccount
+    name: lucky-dashboard-sa
+    namespace: web
+roleRef:
+  kind: Role
+  name: lucky-dashboard-role
+  apiGroup: rbac.authorization.k8s.io
+
+---
+# Droit en LECTURE SEULE sur l'objet Application ArgoCD (namespace différent : argocd)
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: lucky-dashboard-argocd-reader
+  namespace: argocd
+rules:
+  - apiGroups: ["argoproj.io"]
+    resources: ["applications"]
+    verbs: ["get", "list"]
+
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: lucky-dashboard-argocd-rolebinding
+  namespace: argocd
+subjects:
+  - kind: ServiceAccount
+    name: lucky-dashboard-sa
+    namespace: web
+roleRef:
+  kind: Role
+  name: lucky-dashboard-argocd-reader
+  apiGroup: rbac.authorization.k8s.io
