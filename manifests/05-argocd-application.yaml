@@ -6,7 +6,7 @@ metadata:
 spec:
   project: default
   source:
-    repoURL: https://github.com/<votre-user>/<votre-repo>.git
+    repoURL: https://github.com/luckyrakotomalala/-lucky-dashboard-devsecops.git
     targetRevision: main
     path: manifests
   destination:
